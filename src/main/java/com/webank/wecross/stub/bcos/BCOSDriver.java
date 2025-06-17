@@ -2,20 +2,7 @@ package com.webank.wecross.stub.bcos;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
-import com.webank.wecross.stub.Account;
-import com.webank.wecross.stub.Block;
-import com.webank.wecross.stub.BlockManager;
-import com.webank.wecross.stub.Connection;
-import com.webank.wecross.stub.Driver;
-import com.webank.wecross.stub.Path;
-import com.webank.wecross.stub.Request;
-import com.webank.wecross.stub.ResourceInfo;
-import com.webank.wecross.stub.StubConstant;
-import com.webank.wecross.stub.Transaction;
-import com.webank.wecross.stub.TransactionContext;
-import com.webank.wecross.stub.TransactionException;
-import com.webank.wecross.stub.TransactionRequest;
-import com.webank.wecross.stub.TransactionResponse;
+import com.webank.wecross.stub.*;
 import com.webank.wecross.stub.bcos.account.BCOSAccount;
 import com.webank.wecross.stub.bcos.blockheader.BlockManagerEmpty;
 import com.webank.wecross.stub.bcos.common.BCOSBlockHeader;
@@ -1393,6 +1380,13 @@ public class BCOSDriver implements Driver {
         }
         commandHandler.handle(path, args, account, blockManager, connection, callback, cryptoSuite);
     }
+
+    @Override
+    public void subscribeEvent(
+            TransactionContext context,
+            SubscribeRequest request,
+            Connection connection,
+            Driver.Callback callback) {}
 
     @Override
     public byte[] accountSign(Account account, byte[] message) {
