@@ -1,5 +1,6 @@
 package com.webank.wecross.stub.bcos;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.webank.wecross.stub.Account;
 import com.webank.wecross.stub.Connection;
 import com.webank.wecross.stub.Driver;
@@ -7,6 +8,7 @@ import com.webank.wecross.stub.StubFactory;
 import com.webank.wecross.stub.WeCrossContext;
 import com.webank.wecross.stub.bcos.account.BCOSAccountFactory;
 import com.webank.wecross.stub.bcos.common.BCOSConstant;
+import com.webank.wecross.stub.bcos.config.AddChainStubConfig;
 import com.webank.wecross.stub.bcos.custom.CommandHandlerDispatcher;
 import com.webank.wecross.stub.bcos.custom.DeployContractHandler;
 import com.webank.wecross.stub.bcos.custom.RegisterCnsHandler;
@@ -14,10 +16,12 @@ import com.webank.wecross.stub.bcos.preparation.HubContractDeployment;
 import com.webank.wecross.stub.bcos.preparation.ProxyContractDeployment;
 import java.io.File;
 import java.io.FileWriter;
+import java.io.IOException;
 import java.net.URL;
 import java.security.PrivateKey;
 import java.security.Security;
 import java.util.Map;
+import java.util.StringJoiner;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
 import org.apache.commons.io.FileUtils;
@@ -220,10 +224,72 @@ public class BCOSBaseStubFactory implements StubFactory {
         }
     }
 
+    private void writeContent(File file, String content) throws IOException {
+        if (!file.getParentFile().exists()) {
+            file.getParentFile().mkdirs();
+        }
+
+        if (!file.createNewFile()) {
+            logger.error("Conf file exists! {}", file);
+            return;
+        }
+
+        FileWriter fileWriter = new FileWriter(file);
+        try {
+            fileWriter.write(content);
+        } finally {
+            fileWriter.close();
+        }
+    }
+
+    private void saveCertsAndKeys(String path, AddChainStubConfig stubConfig) throws IOException {
+        File caCertFile = new File(path + File.separator + "ca.crt");
+        writeContent(caCertFile, stubConfig.getChannelService().getCaCert());
+
+        File sslCertFile = new File(path + File.separator + "sdk.crt");
+        writeContent(sslCertFile, stubConfig.getChannelService().getSslCert());
+
+        File sslKeyFile = new File(path + File.separator + "sdk.key");
+        writeContent(sslKeyFile, stubConfig.getChannelService().getSslKey());
+
+        File gmCaCertFile = new File(path + File.separator + "gm" + File.separator + "gmca.crt");
+        writeContent(gmCaCertFile, stubConfig.getChannelService().getGmCaCert());
+
+        File gmSslCertFile = new File(path + File.separator + "gm" + File.separator + "gmsdk.crt");
+        writeContent(gmSslCertFile, stubConfig.getChannelService().getGmSslCert());
+
+        File gmSslKeyFile = new File(path + File.separator + "gm" + File.separator + "gmsdk.key");
+        writeContent(gmSslKeyFile, stubConfig.getChannelService().getGmSslKey());
+
+        File gmEnSslCertFile =
+                new File(path + File.separator + "gm" + File.separator + "gmensdk.crt");
+        writeContent(gmEnSslCertFile, stubConfig.getChannelService().getGmEnSslCert());
+
+        File gmEnSslKeyFile =
+                new File(path + File.separator + "gm" + File.separator + "gmensdk.key");
+        writeContent(gmEnSslKeyFile, stubConfig.getChannelService().getGmEnSslKey());
+    }
+
     @Override
     public void generateConnection(String path, String[] args) {
         try {
-            String chainName = new File(path).getName();
+            String chainType = args[0];
+            String chainName = args[1];
+
+            if (!chainType.equals(getStubType())) {
+                return;
+            }
+
+            ObjectMapper objectMapper = new ObjectMapper();
+            AddChainStubConfig stubConfig =
+                    objectMapper.readValue(args[2], AddChainStubConfig.class);
+
+            saveCertsAndKeys(path, stubConfig);
+
+            StringJoiner connectionsStr = new StringJoiner(",");
+            for (String c : stubConfig.getChannelService().getConnectionsStr()) {
+                connectionsStr.add(String.format("'%s'", c));
+            }
 
             String accountTemplate =
                     "[common]\n"
@@ -231,18 +297,22 @@ public class BCOSBaseStubFactory implements StubFactory {
                             + chainName
                             + "'\n"
                             + "    type = '"
-                            + getStubType()
+                            + chainType
                             + "' # BCOS2.0 or GM_BCOS2.0\n"
                             + "\n"
                             + "[chain]\n"
-                            + "    groupId = 1 # default 1\n"
-                            + "    chainId = 1 # default 1\n"
+                            + "    groupId = "
+                            + stubConfig.getChain().getGroupId()
+                            + "\n"
+                            + "    chainId = "
+                            + stubConfig.getChain().getChainId()
+                            + "\n"
                             + "\n"
                             + "[channelService]\n"
                             + "    caCert = 'ca.crt'\n"
                             + "    sslCert = 'sdk.crt'\n"
                             + "    sslKey = 'sdk.key'\n"
-                            + (("BCOS2.0".equals(getStubType()))
+                            + (("BCOS2.0".equals(chainType))
                                     ? "    gmConnectEnable = false\n"
                                     : "    gmConnectEnable = true\n")
                             + "    gmCaCert = 'gm/gmca.crt'\n"
@@ -251,9 +321,11 @@ public class BCOSBaseStubFactory implements StubFactory {
                             + "    gmEnSslCert = 'gm/gmensdk.crt'\n"
                             + "    gmEnSslKey = 'gm/gmensdk.key'\n"
                             + "    timeout = 300000  # ms, default 60000ms\n"
-                            + "    connectionsStr = ['127.0.0.1:20200']\n"
+                            + "    connectionsStr = ["
+                            + connectionsStr
+                            + "]\n"
                             + "\n";
-            String confFilePath = path + "/stub.toml";
+            String confFilePath = path + File.separator + "stub.toml";
             File confFile = new File(confFilePath);
             if (!confFile.createNewFile()) {
                 logger.error("Conf file exists! {}", confFile);
