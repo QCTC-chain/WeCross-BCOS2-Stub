@@ -12,6 +12,7 @@ import com.webank.wecross.stub.bcos.config.AddChainStubConfig;
 import com.webank.wecross.stub.bcos.custom.CommandHandlerDispatcher;
 import com.webank.wecross.stub.bcos.custom.DeployContractHandler;
 import com.webank.wecross.stub.bcos.custom.RegisterCnsHandler;
+import com.webank.wecross.stub.bcos.custom.RegisterExistingContractHandler;
 import com.webank.wecross.stub.bcos.preparation.HubContractDeployment;
 import com.webank.wecross.stub.bcos.preparation.ProxyContractDeployment;
 import java.io.File;
@@ -86,12 +87,19 @@ public class BCOSBaseStubFactory implements StubFactory {
         RegisterCnsHandler registerCnsHandler = new RegisterCnsHandler();
         registerCnsHandler.setAsyncCnsService(asyncCnsService);
 
+        RegisterExistingContractHandler registerExistingContractHandler =
+                new RegisterExistingContractHandler();
+        registerExistingContractHandler.setAsyncCnsService(asyncCnsService);
+
         DeployContractHandler deployContractHandler = new DeployContractHandler();
         deployContractHandler.setAsyncCnsService(asyncCnsService);
 
         CommandHandlerDispatcher commandHandlerDispatcher = new CommandHandlerDispatcher();
         commandHandlerDispatcher.registerCommandHandler(
                 BCOSConstant.CUSTOM_COMMAND_REGISTER, registerCnsHandler);
+        commandHandlerDispatcher.registerCommandHandler(
+                BCOSConstant.CUSTOM_COMMAND_REGISTER_EXISTING_CONTRACT,
+                registerExistingContractHandler);
         commandHandlerDispatcher.registerCommandHandler(
                 BCOSConstant.CUSTOM_COMMAND_DEPLOY, deployContractHandler);
 
