@@ -33,6 +33,8 @@ public class BCOSStatusCode {
 
     public static final int UnsupportedRPC = 2050;
     public static final int UnclassifiedError = 2100;
+    public static final int SubscribeEventError = 2200;
+    public static final int UnSubscribeEventError = 2201;
 
     public static String getStatusMessage(int status) {
         String message = "";

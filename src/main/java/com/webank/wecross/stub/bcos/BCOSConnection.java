@@ -1,12 +1,10 @@
 package com.webank.wecross.stub.bcos;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
-import com.webank.wecross.stub.Connection;
-import com.webank.wecross.stub.Request;
-import com.webank.wecross.stub.ResourceInfo;
-import com.webank.wecross.stub.Response;
+import com.webank.wecross.stub.*;
 import com.webank.wecross.stub.bcos.client.AbstractClientWrapper;
 import com.webank.wecross.stub.bcos.common.BCOSConstant;
 import com.webank.wecross.stub.bcos.common.BCOSRequestType;
@@ -30,6 +28,9 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import org.fisco.bcos.sdk.abi.FunctionEncoder;
 import org.fisco.bcos.sdk.abi.datatypes.Function;
+import org.fisco.bcos.sdk.abi.wrapper.ABIDefinition;
+import org.fisco.bcos.sdk.abi.wrapper.ABIDefinitionFactory;
+import org.fisco.bcos.sdk.abi.wrapper.ContractABIDefinition;
 import org.fisco.bcos.sdk.client.protocol.model.JsonTransactionResponse;
 import org.fisco.bcos.sdk.client.protocol.response.BcosBlock;
 import org.fisco.bcos.sdk.client.protocol.response.BcosBlockHeader;
@@ -37,6 +38,7 @@ import org.fisco.bcos.sdk.client.protocol.response.Call;
 import org.fisco.bcos.sdk.client.protocol.response.TransactionReceiptWithProof;
 import org.fisco.bcos.sdk.client.protocol.response.TransactionWithProof;
 import org.fisco.bcos.sdk.crypto.CryptoSuite;
+import org.fisco.bcos.sdk.eventsub.EventLogParams;
 import org.fisco.bcos.sdk.model.TransactionReceipt;
 import org.fisco.bcos.sdk.model.callback.TransactionCallback;
 import org.slf4j.Logger;
@@ -65,12 +67,17 @@ public class BCOSConnection implements Connection {
 
     private FunctionEncoder functionEncoder;
 
+    private ABIDefinitionFactory abiDefinitionFactory;
+    private SubscribeEventManager subscribeEventManager;
+
     public BCOSConnection(
             AbstractClientWrapper clientWrapper,
             ScheduledExecutorService scheduledExecutorService) {
         this.clientWrapper = clientWrapper;
         this.cryptoSuite = clientWrapper.getCryptoSuite();
         this.functionEncoder = new FunctionEncoder(cryptoSuite);
+        this.abiDefinitionFactory = new ABIDefinitionFactory(cryptoSuite);
+        this.subscribeEventManager = new SubscribeEventManager(clientWrapper);
         this.scheduledExecutorService = scheduledExecutorService;
         this.objectMapper.disable(SerializationFeature.FAIL_ON_EMPTY_BEANS);
         this.scheduledExecutorService.scheduleAtFixedRate(
@@ -228,6 +235,10 @@ public class BCOSConnection implements Connection {
             asyncGetTransaction(request, callback);
         } else if (request.getType() == BCOSRequestType.CALL) {
             handleAsyncCallRequest(request, callback);
+        } else if (request.getType() == BCOSRequestType.SUBSCRIBE_CONTRACT) {
+            handleSubscribeEventRequest(request, callback);
+        } else if (request.getType() == BCOSRequestType.UNSUBSCRIBE_CONTRACT) {
+            handleUnSubscribeEventRequest(request, callback);
         } else {
             // Does not support asynchronous operation, async to sync
             logger.warn(" unrecognized request type, type: {}", request.getType());
@@ -502,6 +513,105 @@ public class BCOSConnection implements Connection {
             logger.warn(" Exception, e: ", e);
             response.setErrorCode(BCOSStatusCode.HandleGetBlockFailed);
             response.setErrorMessage(e.getMessage());
+        }
+        callback.onResponse(response);
+    }
+
+    private void handleSubscribeEventRequest(Request request, Callback callback) {
+        Response response = new Response();
+        try {
+            Map<String, Object> requestData =
+                    objectMapper.readValue(
+                            request.getData(), new TypeReference<Map<String, Object>>() {});
+
+            String eventName = (String) requestData.get("topic");
+            Integer fromBlock = (Integer) requestData.get("fromBlock");
+            Integer endBlock = (Integer) requestData.get("endBlock");
+            String abi = (String) requestData.get("abi");
+
+            ContractABIDefinition contractABIDefinition = abiDefinitionFactory.loadABI(abi);
+
+            Map<String, List<ABIDefinition>> events = contractABIDefinition.getEvents();
+            List<String> encodedTopics = new ArrayList<>();
+            List<ABIDefinition> abiDefinitions = events.get(eventName);
+            for (ABIDefinition definition : abiDefinitions) {
+                encodedTopics.add(definition.getEventTopic(cryptoSuite));
+            }
+
+            EventLogParams eventLogParams = new EventLogParams();
+            eventLogParams.setFromBlock(
+                    fromBlock.equals(-1) ? "latest" : String.format("%d", fromBlock));
+            eventLogParams.setToBlock(
+                    endBlock.equals(-1) ? "latest" : String.format("%d", endBlock));
+            eventLogParams.setAddresses(new ArrayList<>());
+            ArrayList<Object> topics = new ArrayList<>();
+            for (String topic : encodedTopics) {
+                topics.add(topic);
+            }
+            eventLogParams.setTopics(topics);
+
+            ResourceInfo resourceInfo = request.getResourceInfo();
+            TransactionContext.Callback contextCallback =
+                    (TransactionContext.Callback)
+                            resourceInfo.getProperties().get("listenerCallBack");
+            String registerId =
+                    subscribeEventManager.addSubscribeEvent(
+                            eventName,
+                            abi,
+                            eventLogParams,
+                            new SubscribeEventManager.SubscribeEventCallback() {
+                                @Override
+                                public void onReceive(
+                                        BigInteger blockNumber,
+                                        String txId,
+                                        String address,
+                                        List<Object> data) {
+                                    Map<String, Object> result = new HashMap<>();
+                                    String path = (String) resourceInfo.getProperties().get("path");
+                                    String contractName = path.split("\\.")[2];
+                                    result.put("block_height", blockNumber);
+                                    result.put(
+                                            "chain_id",
+                                            getProperties().get(BCOSConstant.BCOS_CHAIN_ID));
+                                    result.put("tx_id", txId);
+                                    result.put("path", path);
+                                    result.put("topic", eventName);
+                                    result.put("contract_name", contractName);
+                                    result.put("contract_address", address);
+                                    result.put("contract_version", "v1.0.0");
+                                    result.put("event_data", data);
+
+                                    try {
+                                        contextCallback.onSubscribe(
+                                                contractName,
+                                                eventName,
+                                                objectMapper.writeValueAsString(result));
+                                    } catch (JsonProcessingException e) {
+                                        logger.error("事件订阅：序列化数据失败");
+                                    }
+                                }
+                            });
+            response.setErrorCode(BCOSStatusCode.Success);
+            response.setData(registerId.getBytes(StandardCharsets.UTF_8));
+        } catch (Exception e) {
+            logger.warn(" Exception, e: ", e);
+            response.setErrorCode(BCOSStatusCode.SubscribeEventError);
+            response.setErrorMessage(e.getMessage());
+        }
+
+        callback.onResponse(response);
+    }
+
+    private void handleUnSubscribeEventRequest(Request request, Callback callback) {
+        Response response = new Response();
+        String registerId = new String(request.getData(), StandardCharsets.UTF_8);
+        boolean removed = subscribeEventManager.removeSubscribeEvent(registerId);
+        if (removed) {
+            response.setErrorCode(BCOSStatusCode.Success);
+            response.setErrorMessage("success");
+        } else {
+            response.setErrorCode(BCOSStatusCode.UnSubscribeEventError);
+            response.setErrorMessage("failure");
         }
         callback.onResponse(response);
     }

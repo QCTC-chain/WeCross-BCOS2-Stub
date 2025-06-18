@@ -3,6 +3,7 @@ package com.webank.wecross.stub.bcos.client;
 import java.io.IOException;
 import java.math.BigInteger;
 import java.util.Objects;
+import org.fisco.bcos.sdk.BcosSDK;
 import org.fisco.bcos.sdk.client.Client;
 import org.fisco.bcos.sdk.client.protocol.model.JsonTransactionResponse;
 import org.fisco.bcos.sdk.client.protocol.request.Transaction;
@@ -21,6 +22,7 @@ public abstract class AbstractClientWrapper implements ClientWrapper {
     private Client client;
     private String version;
     private CryptoSuite cryptoSuite;
+    private BcosSDK bcosSDK;
 
     public AbstractClientWrapper(Client client) {
         this.client = client;
@@ -91,5 +93,13 @@ public abstract class AbstractClientWrapper implements ClientWrapper {
 
     public void setCryptoSuite(CryptoSuite cryptoSuite) {
         this.cryptoSuite = cryptoSuite;
+    }
+
+    public BcosSDK getBcosSDK() {
+        return this.bcosSDK;
+    }
+
+    public void setBcosSDK(BcosSDK bcosSDK) {
+        this.bcosSDK = bcosSDK;
     }
 }

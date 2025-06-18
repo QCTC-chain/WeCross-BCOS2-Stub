@@ -2,6 +2,7 @@ package com.webank.wecross.stub.bcos.client;
 
 import com.webank.wecross.stub.bcos.common.FeatureSupport;
 import com.webank.wecross.stub.bcos.config.BCOSStubConfig;
+import org.fisco.bcos.sdk.BcosSDK;
 import org.fisco.bcos.sdk.channel.model.EnumNodeVersion;
 import org.fisco.bcos.sdk.client.Client;
 import org.fisco.bcos.sdk.model.NodeVersion;
@@ -17,7 +18,10 @@ public class ClientWrapperFactory {
 
         logger.info("BCOSStubConfig: {}", bcosStubConfig);
 
-        Client client = ClientUtility.initClient(bcosStubConfig);
+        BcosSDK bcosSDK = ClientUtility.initSDK(bcosStubConfig);
+        BCOSStubConfig.ChannelService channelServiceConfig = bcosStubConfig.getChannelService();
+        int groupID = channelServiceConfig.getChain().getGroupID();
+        Client client = bcosSDK.getClient(groupID);
         NodeVersion.ClientVersion nodeVersion = client.getNodeVersion().getNodeVersion();
 
         logger.info("NodeVersion: {}", nodeVersion);
@@ -34,6 +38,7 @@ public class ClientWrapperFactory {
 
         AbstractClientWrapper clientWrapper = createClientWrapperInstance(version, client);
         clientWrapper.setVersion(nodeVersion.getSupportedVersion());
+        clientWrapper.setBcosSDK(bcosSDK);
 
         return clientWrapper;
     }

@@ -8,4 +8,6 @@ public class BCOSRequestType {
     public static final int GET_BLOCK_BY_NUMBER = 1003;
     public static final int GET_TRANSACTION_PROOF = 1004;
     public static final int GET_TRANSACTION = 1005;
+    public static final int SUBSCRIBE_CONTRACT = 1006;
+    public static final int UNSUBSCRIBE_CONTRACT = 1007;
 }

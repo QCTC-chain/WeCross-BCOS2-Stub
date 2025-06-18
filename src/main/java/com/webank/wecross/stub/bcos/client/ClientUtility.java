@@ -19,11 +19,8 @@ public class ClientUtility {
 
     private static final Logger logger = LoggerFactory.getLogger(ClientUtility.class);
 
-    public static Client initClient(BCOSStubConfig bcosStubConfig) throws Exception {
+    public static BcosSDK initSDK(BCOSStubConfig bcosStubConfig) throws Exception {
         BCOSStubConfig.ChannelService channelServiceConfig = bcosStubConfig.getChannelService();
-
-        // groupID
-        int groupID = channelServiceConfig.getChain().getGroupID();
         // ssl connect type
         int cryptoType =
                 bcosStubConfig.getChannelService().isGmConnectEnable()
@@ -57,6 +54,14 @@ public class ClientUtility {
 
         // bcosSDK
         BcosSDK bcosSDK = new BcosSDK(configOption);
+        return bcosSDK;
+    }
+
+    public static Client initClient(BCOSStubConfig bcosStubConfig) throws Exception {
+        BCOSStubConfig.ChannelService channelServiceConfig = bcosStubConfig.getChannelService();
+        // groupID
+        int groupID = channelServiceConfig.getChain().getGroupID();
+        BcosSDK bcosSDK = initSDK(bcosStubConfig);
         return bcosSDK.getClient(groupID);
     }
 

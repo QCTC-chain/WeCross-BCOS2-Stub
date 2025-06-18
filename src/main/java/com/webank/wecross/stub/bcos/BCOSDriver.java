@@ -1,5 +1,6 @@
 package com.webank.wecross.stub.bcos;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.webank.wecross.stub.*;
@@ -27,13 +28,11 @@ import com.webank.wecross.stub.bcos.uaproof.Signer;
 import com.webank.wecross.stub.bcos.verify.BlockHeaderValidation;
 import com.webank.wecross.stub.bcos.verify.MerkleValidation;
 import java.math.BigInteger;
+import java.nio.charset.StandardCharsets;
 import java.security.InvalidParameterException;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.UUID;
+import java.util.*;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 import org.apache.commons.lang3.tuple.ImmutablePair;
 import org.bouncycastle.util.encoders.Hex;
 import org.fisco.bcos.sdk.abi.FunctionEncoder;
@@ -1386,7 +1385,106 @@ public class BCOSDriver implements Driver {
             TransactionContext context,
             SubscribeRequest request,
             Connection connection,
-            Driver.Callback callback) {}
+            Driver.Callback callback) {
+        String topic = request.getTopics().get(0).trim();
+        Request connectionRequest;
+        boolean isSubscribe = false;
+        logger.info("subscribeEvent: {}", request);
+        try {
+            if ("@cancel".equals(topic)) {
+                isSubscribe = false;
+                connectionRequest =
+                        Request.newRequest(
+                                BCOSRequestType.UNSUBSCRIBE_CONTRACT,
+                                request.getTopics().get(1).getBytes(StandardCharsets.UTF_8));
+            } else {
+                isSubscribe = true;
+                final CompletableFuture<String> completableFuture = new CompletableFuture<>();
+                asyncCnsService.queryABI(
+                        context.getPath().getResource(),
+                        this,
+                        connection,
+                        (queryABIException, abi) -> {
+                            if (queryABIException != null) {
+                                completableFuture.complete("");
+                                return;
+                            }
+                            completableFuture.complete(abi);
+                        });
+                String abiContent = "";
+                try {
+                    abiContent = completableFuture.get(5, TimeUnit.SECONDS);
+                } catch (Exception e) {
+                    callback.onTransactionResponse(
+                            new TransactionException(
+                                    BCOSStatusCode.SubscribeEventError, e.getMessage()),
+                            null);
+                    return;
+                }
+
+                if (abiContent.isEmpty()) {
+                    callback.onTransactionResponse(
+                            new TransactionException(
+                                    BCOSStatusCode.SubscribeEventError, "缺少对应的 ABI"),
+                            null);
+                    return;
+                }
+
+                Map<String, Object> requestData = new HashMap<>();
+                requestData.put("abi", abiContent);
+                requestData.put("topic", topic);
+                requestData.put("fromBlock", request.getFromBlockNumber());
+                requestData.put("endBlock", request.getToBlockNumber());
+                connectionRequest =
+                        Request.newRequest(
+                                BCOSRequestType.SUBSCRIBE_CONTRACT,
+                                objectMapper.writeValueAsBytes(requestData));
+
+                ResourceInfo resourceInfo = new ResourceInfo();
+                resourceInfo.getProperties().put("listenerCallBack", context.getCallback());
+                resourceInfo.getProperties().put("path", context.getPath().toString());
+                connectionRequest.setResourceInfo(resourceInfo);
+            }
+
+            connection.asyncSend(
+                    connectionRequest,
+                    response -> {
+                        if (response.getErrorCode() != BCOSStatusCode.Success) {
+                            callback.onTransactionResponse(
+                                    new TransactionException(
+                                            response.getErrorCode(), response.getErrorMessage()),
+                                    null);
+                            return;
+                        }
+                        TransactionResponse transactionResponse = new TransactionResponse();
+                        if (connectionRequest.getType() == BCOSRequestType.SUBSCRIBE_CONTRACT) {
+                            String handle = new String(response.getData(), StandardCharsets.UTF_8);
+                            transactionResponse.setMessage(handle);
+                            List<String> result = new ArrayList<>();
+                            result.add(String.format("path:%s", context.getPath()));
+                            result.add(String.format("topics:%s", topic));
+                            result.add(String.format("raw topics:%s", request.getTopics().get(0)));
+                            result.add(String.format("from:%d", request.getFromBlockNumber()));
+                            result.add(String.format("to:%d", request.getToBlockNumber()));
+                            transactionResponse.setResult(result.stream().toArray(String[]::new));
+                        } else {
+                            String handler = request.getTopics().get(1);
+                            transactionResponse.setMessage(String.format("订阅事件取消成功。%s", handler));
+                        }
+                        callback.onTransactionResponse(null, transactionResponse);
+                    });
+
+        } catch (JsonProcessingException e) {
+            logger.error("subscribeEvent was failure. {}", e.getMessage());
+            callback.onTransactionResponse(
+                    new TransactionException(
+                            isSubscribe
+                                    ? BCOSStatusCode.SubscribeEventError
+                                    : BCOSStatusCode.UnSubscribeEventError,
+                            e.getMessage()),
+                    null);
+        }
+    }
 
     @Override
     public byte[] accountSign(Account account, byte[] message) {
