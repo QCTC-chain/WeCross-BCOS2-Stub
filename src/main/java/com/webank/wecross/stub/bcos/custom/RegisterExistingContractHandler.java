@@ -2,6 +2,8 @@ package com.webank.wecross.stub.bcos.custom;
 
 import com.webank.wecross.stub.*;
 import com.webank.wecross.stub.bcos.AsyncCnsService;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Objects;
 import org.fisco.bcos.sdk.crypto.CryptoSuite;
 import org.slf4j.Logger;
@@ -53,7 +55,17 @@ public class RegisterExistingContractHandler implements CommandHandler {
                 blockManager,
                 connection,
                 e -> {
+                    boolean isSuccess = false;
                     if (Objects.nonNull(e)) {
+                        if (e.getMessage()
+                                .contains("The contract name and version already exist")) {
+                            isSuccess = true;
+                        } else {
+                            isSuccess = false;
+                        }
+                    }
+
+                    if (!isSuccess) {
                         logger.warn("registering abi failed", e);
                         callback.onResponse(e, null);
                         return;
@@ -66,7 +78,12 @@ public class RegisterExistingContractHandler implements CommandHandler {
                             address,
                             abi);
 
-                    callback.onResponse(null, "success");
+                    Map<String, Object> data = new HashMap<>();
+                    data.put("CONTRACT_NAME", path.getResource());
+                    data.put("CONTRACT_ADDRESS", address);
+                    data.put("CONTRACT_VERSION", "v1.0.0");
+                    data.put("CONTRACT_RUNTIME_TYPE", "EVM");
+                    callback.onResponse(null, data);
                 });
     }
 }
