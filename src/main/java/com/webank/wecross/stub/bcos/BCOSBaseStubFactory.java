@@ -148,6 +148,9 @@ public class BCOSBaseStubFactory implements StubFactory {
     }
 
     @Override
+    public void releaseConnection() {}
+
+    @Override
     public Account newAccount(Map<String, Object> properties) {
 
         return bcosAccountFactory.build(properties);
