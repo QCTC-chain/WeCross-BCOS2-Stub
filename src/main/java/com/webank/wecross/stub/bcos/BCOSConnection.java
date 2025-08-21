@@ -15,9 +15,11 @@ import com.webank.wecross.stub.bcos.contract.FunctionUtility;
 import com.webank.wecross.stub.bcos.protocol.request.TransactionParams;
 import com.webank.wecross.stub.bcos.protocol.response.TransactionPair;
 import com.webank.wecross.stub.bcos.protocol.response.TransactionProof;
-import java.io.IOException;
 import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
@@ -42,6 +44,7 @@ import org.fisco.bcos.sdk.crypto.CryptoSuite;
 import org.fisco.bcos.sdk.eventsub.EventLogParams;
 import org.fisco.bcos.sdk.model.TransactionReceipt;
 import org.fisco.bcos.sdk.model.callback.TransactionCallback;
+import org.fisco.bcos.sdk.utils.Numeric;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -576,12 +579,18 @@ public class BCOSConnection implements Connection {
                                             getProperties().get(BCOSConstant.BCOS_CHAIN_ID));
                                     result.put("tx_id", txId);
                                     try {
-                                        String tx_time =
-                                                clientWrapper
-                                                        .getBlockByNumber(blockNumber.longValue())
-                                                        .getTimestamp();
-                                        result.put("tx_time", tx_time);
-                                    } catch (IOException e) {
+                                        BigInteger integer =
+                                                Numeric.decodeQuantity(
+                                                        clientWrapper
+                                                                .getBlockByNumber(
+                                                                        blockNumber.longValue())
+                                                                .getTimestamp());
+                                        Instant instant = Instant.ofEpochMilli(integer.longValue());
+                                        LocalDateTime txTime =
+                                                LocalDateTime.ofInstant(
+                                                        instant, ZoneId.of("Asia/Shanghai"));
+                                        result.put("tx_time", txTime.toString());
+                                    } catch (Exception e) {
 
                                     }
                                     result.put("path", path);
