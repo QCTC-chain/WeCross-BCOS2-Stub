@@ -15,6 +15,7 @@ import com.webank.wecross.stub.bcos.contract.FunctionUtility;
 import com.webank.wecross.stub.bcos.protocol.request.TransactionParams;
 import com.webank.wecross.stub.bcos.protocol.response.TransactionPair;
 import com.webank.wecross.stub.bcos.protocol.response.TransactionProof;
+import java.io.IOException;
 import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -574,6 +575,15 @@ public class BCOSConnection implements Connection {
                                             "chain_id",
                                             getProperties().get(BCOSConstant.BCOS_CHAIN_ID));
                                     result.put("tx_id", txId);
+                                    try {
+                                        String tx_time =
+                                                clientWrapper
+                                                        .getBlockByNumber(blockNumber.longValue())
+                                                        .getTimestamp();
+                                        result.put("tx_time", tx_time);
+                                    } catch (IOException e) {
+
+                                    }
                                     result.put("path", path);
                                     result.put("topic", eventName);
                                     result.put("contract_name", contractName);
